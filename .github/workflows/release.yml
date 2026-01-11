@@ -1,0 +1,88 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            output: strip-front-matter-linux-amd64
+          - goos: linux
+            goarch: arm64
+            output: strip-front-matter-linux-arm64
+          - goos: darwin
+            goarch: amd64
+            output: strip-front-matter-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            output: strip-front-matter-darwin-arm64
+          - goos: windows
+            goarch: amd64
+            output: strip-front-matter-windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            output: strip-front-matter-windows-arm64.exe
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -o ${{ matrix.output }} -ldflags="-s -w" strip-front-matter.go
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: ${{ matrix.output }}
+  
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+      
+      - name: Prepare binaries
+        run: |
+          mkdir -p release
+          find binaries -type f -exec mv {} release/ \;
+          chmod +x release/strip-front-matter-*
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
